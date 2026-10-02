@@ -3,27 +3,27 @@ import os
 import socket
 import threading
 import uuid
-from protocol import send_msg, recv_msg, recv_exact,make_hello, make_hello_ack, make_text, make_file
+from protocol import send_msg, recv_msg, make_hello, make_hello_ack, make_text, make_file
 
 CHUNK_SIZE = 64 * 1024
 DOWNLOAD_DIR = "downloads"
 
 
 class P2PNode:
-     # CREATE PEER
+    # CREATE PEER
     def __init__(self, name, port, log, on_peers_changed):
         self.name = name
         self.port = port
         self.peer_id = uuid.uuid4().hex[:8]
-        self.log = log                         
+        self.log = log
         self.on_peers_changed = on_peers_changed
-        self.peers = {}                       
+        self.peers = {}
         self.peers_lock = threading.Lock()
         self.server = None
         self.running = False
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    # Server role 
+    # Server role
     def start(self):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -37,7 +37,7 @@ class P2PNode:
             try:
                 conn, addr = self.server.accept()
             except OSError:
-                break  # server socket bondho hoyeche
+                break  # server socket closed
             threading.Thread(target=self._handle_incoming,
                              args=(conn, addr), daemon=True).start()
 
@@ -47,7 +47,12 @@ class P2PNode:
             hello = recv_msg(conn)
             if hello.get("type") != "hello":
                 raise ValueError("Expected hello message")
-            send_msg(conn, make_hello_ack(self.peer_id, self.name, self.port))
+            self.log(f"[SYSTEM] Received from {hello['peer_name']} "
+                     f"[{hello['peer_id']}] IP={hello.get('ip')} Port={hello['port']}")
+
+            my_ip = conn.getsockname()[0]
+            send_msg(conn, make_hello_ack(self.peer_id, self.name, self.port, my_ip))
+            self.log(f"[SYSTEM] Sent (my IP={my_ip})")
             conn.settimeout(None)
         except Exception as e:
             self.log(f"[ERROR] Incoming handshake failed: {e}")
@@ -74,10 +79,16 @@ class P2PNode:
         try:
             sock.settimeout(5)
             sock.connect((ip, port))
-            send_msg(sock, make_hello(self.peer_id, self.name, self.port))
+
+            my_ip = sock.getsockname()[0]
+            send_msg(sock, make_hello(self.peer_id, self.name, self.port, my_ip))
+            self.log(f"[SYSTEM] Sent to {ip}:{port} (my IP={my_ip})")
+
             ack = recv_msg(sock)
             if ack.get("type") != "hello_ack":
                 raise ValueError("Expected hello_ack message")
+            self.log(f"[SYSTEM] Received from {ack['peer_name']} "
+                     f"[{ack['peer_id']}] IP={ack.get('ip')} Port={ack['port']}")
             sock.settimeout(None)
         except Exception as e:
             self.log(f"[ERROR] Connection failed: {e}")
@@ -92,7 +103,7 @@ class P2PNode:
         threading.Thread(target=self._register_and_listen,
                          args=(sock, (ip, port), ack), daemon=True).start()
 
-    # peer register + receive loop 
+    # peer register + receive loop
     def _register_and_listen(self, sock, addr, info):
         pid = info["peer_id"]
         with self.peers_lock:
@@ -115,7 +126,7 @@ class P2PNode:
                 msg = recv_msg(sock)
                 kind = msg.get("type")
                 if kind == "text":
-                    self.log(f"{msg['sender_name']} -> You: {msg['message']}")
+                    self.log(f"[TEXT RECEIVED] {msg['sender_name']} ({addr[0]}) -> You: {msg['message']}")
                 elif kind == "file":
                     self._receive_file(sock, msg)
         except Exception:
@@ -134,7 +145,7 @@ class P2PNode:
             self.log(f"[SYSTEM] {peer['name']} disconnected")
             self.on_peers_changed()
 
-    #Text
+    # Text
     def send_text(self, pid, text):
         peer = self.peers.get(pid)
         if not peer:
@@ -143,12 +154,12 @@ class P2PNode:
         try:
             with peer["send_lock"]:
                 send_msg(peer["sock"], make_text(self.peer_id, self.name, text))
-            self.log(f"You -> {peer['name']}: {text}")
+            self.log(f"[TEXT SENT] You -> {peer['name']}: {text}")
         except Exception as e:
             self.log(f"[ERROR] Send failed: {e}")
             self._remove_peer(pid)
 
-    #  File
+    # File
     def send_file(self, pid, path):
         peer = self.peers.get(pid)
         if not peer:
@@ -169,23 +180,23 @@ class P2PNode:
                         if not chunk:
                             break
                         sock.sendall(chunk)
-            self.log(f"You -> {peer['name']}: File sent: {filename} ({filesize} bytes)")
+            self.log(f"[FILE SENT] You -> {peer['name']}: {filename} ({filesize} bytes)")
         except Exception as e:
             self.log(f"[ERROR] File send failed: {e}")
             self._remove_peer(pid)
 
     def _receive_file(self, sock, meta):
-        filename = os.path.basename(str(meta.get("filename", "file"))) 
+        filename = os.path.basename(str(meta.get("filename", "file")))
         try:
             filesize = int(meta["filesize"])
             if filesize < 0:
                 raise ValueError
         except (KeyError, ValueError):
-            raise ConnectionError("Invalid file size")  
+            raise ConnectionError("Invalid file size")
         path = os.path.join(DOWNLOAD_DIR, filename)
         base, ext = os.path.splitext(filename)
         i = 1
-        while os.path.exists(path):          # to do not overwrite
+        while os.path.exists(path):  # do not overwrite
             path = os.path.join(DOWNLOAD_DIR, f"{base}_{i}{ext}")
             i += 1
 
@@ -197,7 +208,7 @@ class P2PNode:
                     raise ConnectionError("Disconnected during file transfer")
                 f.write(chunk)
                 remaining -= len(chunk)
-        self.log(f"{meta['sender_name']} -> You: File received: {os.path.basename(path)}")
+        self.log(f"[FILE RECEIVED] {meta['sender_name']} -> You: {os.path.basename(path)}")
 
     # Helpers
     def get_peers(self):

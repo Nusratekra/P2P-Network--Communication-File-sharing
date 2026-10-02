@@ -124,7 +124,7 @@ Handled without crashing: invalid IP, invalid port, connection refused/timeout, 
 **Error Handling – Connection Refused**
 ![Connection Error](screenshots/error.png)
 
-**Error Handling – Text/File Error**
+**Error Handling – Text/File Error(receiver is not selected)**
 ![Text Error](screenshots/text_error.png)
 
 ## 11. Limitations

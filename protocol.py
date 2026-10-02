@@ -38,17 +38,17 @@ def recv_msg(sock):
     return message
 
 #CREATE HELLO MESSAGE
-def make_hello(peer_id,name,port):
+def make_hello(peer_id, name, port, ip):
     """ Create a HELLO message. """
 
-    return {"type": "hello", "peer_id": peer_id, "peer_name": name,"port": port}
+    return {"type": "hello", "peer_id": peer_id, "peer_name": name, "port": port, "ip": ip}
 
 
 #CREATE HELLO ACK MESSAGE
-def make_hello_ack(peer_id, name, port):
+def make_hello_ack(peer_id, name, port, ip):
     """ Create a HELLO acknowledgement message."""
 
-    return {"type": "hello_ack","peer_id": peer_id,"peer_name": name,"port": port}
+    return {"type": "hello_ack", "peer_id": peer_id, "peer_name": name, "port": port, "ip": ip}
 
 
 #CREATE TEXT MESSAGE
