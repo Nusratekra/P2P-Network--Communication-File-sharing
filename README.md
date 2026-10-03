@@ -94,7 +94,7 @@ Handled without crashing: invalid IP, invalid port, connection refused/timeout, 
 | Test | Result |
 |------|--------|
 | Two peers on same computer (text, image, audio, video) | Pass |
-| Two computers on same LAN |  not tested |
+| Two computers on same LAN |  pass |
 | Three peers (Alice–Bob, Bob–Charlie, Charlie–Alice) | Pass |
 | Peer disconnect handling | Pass |
 
